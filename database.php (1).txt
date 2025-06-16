@@ -1,9 +1,9 @@
 <?php
 // Konfigurasi MySQL
-$host = "103.164.20.30";
+$host = "localhost";
 $port = "3306";
-$user = "bl_cahayabone";
-$password = "Yg50NQM6sU@f"; // ganti dengan password Anda
+$user = "user";
+$password = "password"; // ganti dengan password Anda
 
 function connect($dbname = null) {
     global $host, $port, $user, $password;
