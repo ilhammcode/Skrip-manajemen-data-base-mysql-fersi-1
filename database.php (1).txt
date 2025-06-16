@@ -1,0 +1,173 @@
+<?php
+// Konfigurasi MySQL
+$host = "103.164.20.30";
+$port = "3306";
+$user = "bl_cahayabone";
+$password = "Yg50NQM6sU@f"; // ganti dengan password Anda
+
+function connect($dbname = null) {
+    global $host, $port, $user, $password;
+    $dsn = $dbname ? "mysql:host=$host;port=$port;dbname=$dbname" : "mysql:host=$host;port=$port";
+    return new PDO($dsn, $user, $password, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+    ]);
+}
+
+// Backup database
+if (isset($_GET['download'])) {
+    $db = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['download']);
+    $file = "/tmp/{$db}_" . time() . ".sql";
+    exec("mysqldump -h $host -u $user -p$password $db > $file");
+    header('Content-Type: application/sql');
+    header("Content-Disposition: attachment; filename=\"$db.sql\"");
+    readfile($file);
+    unlink($file);
+    exit;
+}
+
+$pdo = connect();
+$databases = $pdo->query("SHOW DATABASES")->fetchAll(PDO::FETCH_COLUMN);
+$currentDb = $_GET['db'] ?? null;
+$currentTable = $_GET['table'] ?? null;
+$result = null;
+$error = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sql']) && $currentDb) {
+    try {
+        $pdo = connect($currentDb);
+        $stmt = $pdo->query($_POST['sql']);
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        $error = $e->getMessage();
+    }
+}
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MySQL Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f5f6fa;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        .sidebar {
+            background-color: #ffffff;
+            height: 100vh;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+        .sidebar h4 {
+            font-weight: bold;
+        }
+        .content {
+            padding: 30px;
+        }
+        .db-item a {
+            text-decoration: none;
+            display: block;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            background: #f1f2f6;
+        }
+        .db-item a.active {
+            background-color: #1e90ff;
+            color: white;
+        }
+        .btn-query {
+            background-color: #1e90ff;
+            color: white;
+        }
+        .table thead {
+            background: #f1f2f6;
+        }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-3 sidebar">
+            <h4>📂 Databases</h4>
+            <div class="db-item">
+                <?php foreach ($databases as $db): ?>
+                    <a href="?db=<?= urlencode($db) ?>" class="<?= $currentDb === $db ? 'active' : '' ?>">
+                        <?= $db ?>
+                        <span class="float-end">
+                            <a href="?download=<?= urlencode($db) ?>" class="btn btn-sm btn-outline-secondary">⬇</a>
+                        </span>
+                    </a>
+                <?php endforeach ?>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="col-md-9 content">
+            <?php if ($currentDb): ?>
+                <h3>📑 Tabel: <code><?= htmlspecialchars($currentDb) ?></code></h3>
+                <?php
+                    $pdo = connect($currentDb);
+                    $tables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+                ?>
+                <div class="mb-4">
+                    <?php foreach ($tables as $table): ?>
+                        <a href="?db=<?= urlencode($currentDb) ?>&table=<?= urlencode($table) ?>" class="btn btn-outline-primary btn-sm m-1"><?= $table ?></a>
+                    <?php endforeach ?>
+                </div>
+
+                <?php if ($currentTable): ?>
+                    <h5>📋 Isi Tabel <code><?= htmlspecialchars($currentTable) ?></code></h5>
+                    <?php
+                    try {
+                        $stmt = $pdo->query("SELECT * FROM `$currentTable` LIMIT 100");
+                        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                        if ($rows):
+                    ?>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-sm">
+                                <thead><tr><?php foreach (array_keys($rows[0]) as $col): ?><th><?= $col ?></th><?php endforeach ?></tr></thead>
+                                <tbody>
+                                    <?php foreach ($rows as $row): ?>
+                                        <tr><?php foreach ($row as $cell): ?><td><?= htmlspecialchars((string)$cell) ?></td><?php endforeach ?></tr>
+                                    <?php endforeach ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <p class="text-muted">Tabel kosong.</p>
+                    <?php endif; } catch (Exception $e) {
+                        echo "<div class='alert alert-danger'>Gagal menampilkan tabel: " . htmlspecialchars($e->getMessage()) . "</div>";
+                    } ?>
+                <?php endif ?>
+
+                <hr>
+                <h5>🧪 Query Manual</h5>
+                <?php if ($error): ?>
+                    <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+                <?php endif ?>
+                <?php if ($result): ?>
+                    <div class="table-responsive mt-2">
+                        <table class="table table-bordered table-sm">
+                            <thead><tr><?php foreach (array_keys($result[0]) as $col): ?><th><?= $col ?></th><?php endforeach ?></tr></thead>
+                            <tbody>
+                                <?php foreach ($result as $row): ?>
+                                    <tr><?php foreach ($row as $cell): ?><td><?= htmlspecialchars((string)$cell) ?></td><?php endforeach ?></tr>
+                                <?php endforeach ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif ?>
+                <form method="post">
+                    <textarea name="sql" class="form-control mb-2" rows="4" placeholder="Contoh: SELECT * FROM tablename;"></textarea>
+                    <button type="submit" class="btn btn-query">Jalankan</button>
+                </form>
+            <?php else: ?>
+                <div class="alert alert-info">Pilih salah satu database untuk mulai.</div>
+            <?php endif ?>
+        </div>
+    </div>
+</div>
+</body>
+</html>
